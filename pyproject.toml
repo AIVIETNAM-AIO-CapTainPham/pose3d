@@ -1,0 +1,30 @@
+[project]
+name = "pose3d"
+version = "0.1.0"
+description = "Streamlit UI for b-arac/rtmpose3d 3D pose estimation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "huggingface-hub>=1.18.0",
+    "numpy>=2.4.6",
+    "opencv-python>=4.13.0.92",
+    "plotly>=6.8.0",
+    "pre-commit>=4.6.0",
+    "streamlit>=1.58.0",
+]
+
+# ML stack (torch cu128 + mmcv build-from-source + mmpose/mmdet/rtmpose3d) KHÔNG
+# nằm trong dependencies chính: trên GB10/aarch64 chúng cần index cu128 và build
+# mmcv từ source với CUDA 12.8 (xem README). Cài thủ công 1 lần theo README;
+# `uv run` sẽ không đụng tới chúng. Liệt kê ở đây để tham chiếu:
+#   torch>=2.0.0 torchvision  (index cu128)
+#   mmengine mmdet mmpose mmcv==2.2.0 (source)  tqdm
+#   rtmpose3d (editable: demo/rtm)
+[project.optional-dependencies]
+ml-reference = []
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.3.0",
+]

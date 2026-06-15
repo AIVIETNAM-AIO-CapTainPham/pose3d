@@ -1,146 +1,153 @@
-# 3D Pose Estimation
+# POSE3D — Streamlit UI cho RTMPose3D
 
-Dự án nghiên cứu và xây dựng hệ thống ước lượng tư thế con người trong không gian 3D từ ảnh 2D thời gian thực.
+UI bằng **Streamlit** để chạy 3D pose estimation với [b-arac/rtmpose3d](https://github.com/b-arac/rtmpose3d).
+Cho phép **truyền model (checkpoint đã fine-tune) vào** rồi inference trên ảnh, hiển thị 2D keypoints overlay + 3D skeleton.
 
-# RTMPose3D Web
+App: demo/rtm/app.py
 
-Streamlit UI để upload ảnh và chạy inference bằng [`b-arac/rtmpose3d`](https://github.com/b-arac/rtmpose3d).
+## Môi trường
 
-## Models
+Máy đích: **NVIDIA GB10 (Grace Blackwell, aarch64)**, CUDA driver 580, toolkit hệ thống CUDA 13.0.
+Điểm mấu chốt: kiến trúc **aarch64** + GPU Blackwell (sm_120) nên phải dùng PyTorch `cu128`, và `mmcv`
+không có wheel sẵn -> **build từ source** với một CUDA toolkit **12.8** (khớp major với torch cu128).
 
-| Config | Pose model | Speed | Accuracy |
-|---|---|---|---|
-| `config/rtmpose3d_l.json` | RTMW3D-L | faster | good |
-| `config/rtmpose3d_x.json` | RTMW3D-X | slower | better |
+Quản lý môi trường bằng `uv` (`.venv` trong repo).
 
-Detector dùng chung: **RTMDet-M** (~50 MB). Pose checkpoint: L ~170 MB, X ~280 MB.
+### 1. UI + PyTorch (cu128)
 
-## Requirements
+    uv sync
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
-- Python 3.10–3.11
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- CPU đủ để chạy (không cần GPU)
+Kiểm tra GPU:
 
-## Setup
+    uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 
-```bash
-git clone --recurse-submodules <repo-url>
-cd rtmpose_3d
-make install-dev        # cài deps + pre-commit hook
-make download-weights   # tải tất cả checkpoints (~500 MB)
-```
+### 2. CUDA toolkit 12.8 (để build mmcv)
 
-> Nếu đã clone rồi mà thư mục `rtmpose3d/` rỗng: `git submodule update --init`
+Toolkit hệ thống là 13.0 (major mismatch với torch cu128 -> PyTorch chặn build).
+Lấy nvcc 12.8 độc lập qua micromamba (không cần sudo):
 
-Để chỉ tải model L (nhẹ hơn):
+    curl -Ls https://micro.mamba.pm/api/micromamba/linux-aarch64/latest | tar -xvj bin/micromamba
 
-```bash
-uv run python -c "
-import os, importlib.util
-from pathlib import Path
-ROOT = Path('.')
-os.environ['RTMPOSE3D_CACHE_DIR'] = str(ROOT / 'weights')
-spec = importlib.util.spec_from_file_location('dl', ROOT / 'rtmpose3d/rtmpose3d/weights/downloader.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-m.get_checkpoint_path('https://huggingface.co/rbarac/rtmpose3d/resolve/main/rtmdet_m_8xb32-100e_coco-obj365-person-235e8209.pth', ROOT / 'weights')
-m.get_checkpoint_path('https://huggingface.co/rbarac/rtmpose3d/resolve/main/rtmw3d-l_8xb64_cocktail14-384x288-794dbc78_20240626.pth', ROOT / 'weights')
-"
-```
+    MAMBA_ROOT_PREFIX=$HOME/micromamba ./bin/micromamba create -y -p $HOME/cuda128 \
+      -c nvidia -c conda-forge \
+      "cuda-nvcc=12.8" "cuda-cudart-dev=12.8" "cuda-cccl=12.8" "cuda-nvtx=12.8" \
+      "libcusparse-dev=12" "libcublas-dev=12" "libcusolver-dev=11"
 
-## Chạy
+Trên aarch64 (sbsa) header lib nằm ở `$HOME/cuda128/targets/sbsa-linux/include`,
+nên build mmcv phải thêm `CPATH` trỏ vào đó (xem bước 3). Build mmcv mất ~1 giờ.
 
-```bash
-make run
-# hoặc trực tiếp:
-uv run streamlit run app/streamlit_app.py
-```
+### 3. Build mmcv từ source
 
-Mở `http://localhost:8501`.
+    export CUDA_HOME=$HOME/cuda128
+    export PATH=$CUDA_HOME/bin:$PATH
+    export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$CUDA_HOME/targets/sbsa-linux/lib:$LD_LIBRARY_PATH
+    export CPATH=$CUDA_HOME/targets/sbsa-linux/include:$CPATH
+    export LIBRARY_PATH=$CUDA_HOME/targets/sbsa-linux/lib:$LIBRARY_PATH
+    export MMCV_WITH_OPS=1 FORCE_CUDA=1 MAX_JOBS=8
+    export TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
 
-Để dùng model X thay vì L, sửa `CONFIG_PATH` trong [app/streamlit_app.py](app/streamlit_app.py):
+    uv pip install "setuptools<70" wheel       # cung cấp pkg_resources cho build
+    uv pip install "mmcv==2.2.0" --no-binary mmcv --no-build-isolation
 
-```python
-CONFIG_PATH = ROOT / "config" / "rtmpose3d_x.json"
-```
+### 4. mmpose / mmdet / rtmpose3d
 
-### Chạy trên LAN
+xtcocotools (dep của mmpose) cần build, nên cài Cython trước rồi dùng `--no-build-isolation`:
 
-```bash
-uv run streamlit run app/streamlit_app.py --server.address 0.0.0.0 --server.port 8501
-```
+    uv pip install cython numpy
+    uv pip install xtcocotools --no-build-isolation
+    uv pip install "mmengine>=0.7.0" "mmdet>=3.0.0" "mmpose>=1.0.0" tqdm --no-build-isolation
+    uv pip install -e demo/rtm --no-deps --no-build-isolation
 
-Mở `http://<IP-máy>:8501` từ thiết bị khác trên cùng mạng.
+## Chạy app
 
-## GPU (tuỳ chọn)
+Dùng script `run.sh` (đã set sẵn `LD_LIBRARY_PATH` tới CUDA 12.8 libs cho runtime):
 
-Nếu có GPU NVIDIA với CUDA, cài MMCV wheel tương ứng rồi chạy:
+    ./run.sh
 
-```bash
-RTMPOSE3D_DEVICE=cuda uv run streamlit run app/streamlit_app.py
-```
+Hoặc thủ công:
 
-hoặc sửa `"device"` trong file config thành `"cuda:0"`.
+    export LD_LIBRARY_PATH=$HOME/cuda128/lib64:$HOME/cuda128/targets/sbsa-linux/lib:$LD_LIBRARY_PATH
+    uv run streamlit run demo/rtm/app.py
 
-## Layout UI
+Trong sidebar:
+- **📥 Tải model về**: clone checkpoint ngay trong app — từ *URL trực tiếp*,
+  *HuggingFace Hub* (repo id + tên file), hoặc *checkpoint mặc định RTMPose3D*.
+  File tải về cache `~/.cache/rtmpose3d/checkpoints/`, dùng được luôn qua mục
+  *Đã tải về* bên dưới.
+- **Model size**: `l` (large) hoặc `x` (extra large).
+- **Pose checkpoint**: chọn *Mặc định* (auto-download), *Đã tải về* (từ mục tải
+  ở trên), *Đường dẫn/URL* (trỏ checkpoint **fine-tune** của bạn), hoặc *Upload .pth*.
+- **Pose config**: để trống dùng mặc định theo model size, hoặc trỏ config riêng.
+- **Detector**: tùy chọn, mặc định auto-download RTMDet-M.
+- **Device**: `cuda:0` hoặc `cpu`.
 
-```
-┌──────────────────────────────────────────────────────┐
-│  Input image          │  2D Overlay (skeleton)        │
-├──────────────────────────────────────────────────────┤
-│  3D Skeleton (xoay)   │  Keypoints table (17 joints)  │
-└──────────────────────────────────────────────────────┘
-```
+Bấm **Load model** -> upload ảnh -> **Chạy inference**. Kết quả: ảnh 2D overlay keypoints +
+skeleton 3D tương tác (plotly).
 
-Sidebar: bbox threshold · single/multi person · góc nhìn 3D · toggle raw JSON.
+## Dữ liệu
 
-## Dev
+`data/GT/{images,labels}` — ảnh + nhãn ground-truth cho fine-tune.
 
-```bash
-make lint     # ruff check
-make format   # ruff format
-make clean    # xóa __pycache__, .cache, .ruff_cache
-```
+## Cấu trúc thư mục
 
-## Git Workflow
+    POSE3D/
+    ├── src/pose24/              # Package chính — bộ pose 24 keypoint
+    │   ├── keypoints.py         # Định nghĩa 24 keypoint, tên, nối xương, cặp trái-phải
+    │   ├── datasets/            # Đọc & tiền xử lý dữ liệu
+    │   │   ├── gt_json_dataset.py  # Nạp nhãn GT (JSON) → 24 keypoint
+    │   │   └── transforms.py       # Biến đổi/augment ảnh + keypoint khi train
+    │   ├── codecs/              # Mã hoá/giải mã nhãn 3D (toạ độ ↔ dạng model học)
+    │   ├── models/              # Định nghĩa mô hình
+    │   │   ├── rtmw3d_head.py      # Đầu ra dự đoán keypoint 3D
+    │   │   ├── pose_estimator.py   # Ghép thành mô hình ước lượng pose hoàn chỉnh
+    │   │   ├── loss.py             # Hàm mất mát cơ bản
+    │   │   └── structure_loss.py   # Mất mát giữ đúng cấu trúc/tỉ lệ khung xương
+    │   ├── engine/hooks.py      # Tự xuất ảnh so sánh GT vs Pred trong lúc train
+    │   ├── visualization/draw.py # Vẽ overlay 2D + skeleton 3D (GT vs Pred)
+    │   └── configs/             # File cấu hình train/finetune
+    │
+    ├── tools/                   # Script chạy tay
+    │   ├── make_splits.py       # Chia dữ liệu train/val/test
+    │   ├── train.py             # Huấn luyện / finetune
+    │   ├── eval.py              # Đánh giá checkpoint
+    │   └── visualize.py         # Xuất ảnh kiểm tra keypoint
+    │
+    ├── demo/                    # App Streamlit demo inference
+    │   ├── app.py               # Giao diện chính (đã finetune)
+    │   └── rtm/                 # App tham chiếu RTMPose3D gốc
+    │
+    ├── tests/                   # Bộ test tự động (dataset, loss, model, pipeline, viz...)
+    ├── data/GT/                 # Ảnh + nhãn ground-truth để finetune
+    ├── work_dirs/               # Nơi lưu checkpoint & log khi train
+    ├── vis/                     # Ảnh trực quan hoá xuất ra
+    ├── clone_code/              # Repo tham chiếu (chỉ đọc) — pose3d & theia gốc
+    │
+    ├── Makefile                 # Các lệnh tắt: test / lint / pre-commit / train...
+    ├── run.sh                   # Chạy app (đã set sẵn biến môi trường CUDA)
+    ├── ARCHITECTURE.md          # Mô tả kiến trúc hệ thống
+    └── GT_JSON_GUIDE.md         # Hướng dẫn định dạng nhãn GT JSON
 
-### Cấu trúc branch
+## Phát triển
 
-```
-main                        # tài liệu, ổn định
-└── dev                     # tích hợp các feature
-    └── feature/<tên>       # thêm tính năng mới
-    └── fix/<tên>           # sửa bug
-    └── chore/<tên>         # cập nhật config, docs,...
-```
+Các tác vụ dev gói trong `Makefile` (chạy `make help` để xem đầy đủ):
 
-Ví dụ: `feature/data-preprocessing`, `fix/model-output-error`
+    make test         # chạy toàn bộ test suite (unit + loss + viz + pipeline + model + flip)
+    make lint         # ruff check src/ tests/ tools/
+    make pre-commit   # chạy tất cả pre-commit hooks trên mọi file
 
-### Các bước làm việc
+Cài hook tự chạy mỗi lần commit (tùy chọn):
 
-```bash
-# 1. Luôn cập nhật branch dev trước
-git checkout dev
-git pull origin dev
+    uv run pre-commit install
 
-# 2. Tạo branch mới từ dev
-git checkout -b feature/<tên-tính-năng>
+## Ghi chú
 
-# 3. Làm việc, sau đó commit
-git add .
-git commit -m "feat: mô tả ngắn thay đổi"
-
-# 4. Push branch lên remote
-git push origin feature/<tên-tính-năng>
-
-# 5. Tạo Pull Request trên GitHub để merge vào dev
-```
-
-### Quy tắc commit message
-
-| Prefix | Dùng khi |
-|---|---|
-| `feat:` | Thêm tính năng mới |
-| `fix:` | Sửa bug |
-| `docs:` | Cập nhật tài liệu |
-| `chore:` | Thay đổi config, dependencies |
-| `refactor:` | Refactor code |
+- 133 keypoints COCO-WholeBody: body(17) + feet(6) + face(68) + hands(42).
+- 3D theo quy ước Z-up, đơn vị mét (camera-relative).
+- Lần đầu với checkpoint mặc định tải ~330MB về `~/.cache/rtmpose3d/checkpoints/`.
+- PyTorch >= 2.6 mặc định `weights_only=True` làm hỏng load checkpoint cũ;
+  `rtmpose3d/inference.py` đã vá `torch.load` về `weights_only=False`.
+- Nếu gặp `CUDA error: out of memory` lúc load model: GB10 dùng unified memory,
+  kiểm tra `nvidia-smi` xem process khác có đang chiếm VRAM không. Có thể chạy
+  `Device = cpu` để test pipeline.
+- Pipeline đã verify chạy đúng (1 người, 133 keypoints 2D+3D) trên ảnh mẫu.
