@@ -5,6 +5,10 @@ Cho phép **truyền model (checkpoint đã fine-tune) vào** rồi inference tr
 
 App: `demo/app.py`
 
+### Ví dụ output
+
+![Ví dụ 2D overlay + 3D skeleton](vis/sample_0.jpg)
+
 ## Môi trường
 
 Máy đích: **NVIDIA GB10 (Grace Blackwell, aarch64)**, CUDA driver 580, toolkit hệ thống CUDA 13.0.
@@ -81,6 +85,15 @@ Hoặc thủ công:
 
     PYTHONPATH=src uv run streamlit run demo/app.py --server.port 8252 --server.address 0.0.0.0
 
+Chạy demo kèm public URL qua Cloudflare Quick Tunnel (không cần mở port/firewall,
+không cần tài khoản Cloudflare):
+
+    make demo-tunnel
+
+URL public dạng `https://xxx-xxx.trycloudflare.com` in ra trong log `cloudflared`
+sau ~5-10 giây. `Ctrl+C` để tắt cả Streamlit và tunnel. Yêu cầu `cloudflared` đã
+cài sẵn trên máy.
+
 Trong sidebar:
 - **📥 Tải model về**: clone checkpoint ngay trong app — từ *URL trực tiếp*,
   *HuggingFace Hub* (repo id + tên file), hoặc *checkpoint mặc định RTMPose3D*.
@@ -132,10 +145,7 @@ skeleton 3D tương tác (plotly).
     ├── data/GT/                 # Ảnh + nhãn ground-truth để finetune
     ├── work_dirs/               # Nơi lưu checkpoint & log khi train
     ├── vis/                     # Ảnh trực quan hoá xuất ra
-    ├── clone_code/              # Repo tham chiếu (chỉ đọc) — pose3d & theia gốc
-    │
     ├── Makefile                 # Các lệnh tắt: test / lint / pre-commit / train...
-    ├── run.sh                   # Chạy app (đã set sẵn biến môi trường CUDA)
     ├── ARCHITECTURE.md          # Mô tả kiến trúc hệ thống
     └── GT_JSON_GUIDE.md         # Hướng dẫn định dạng nhãn GT JSON
 
