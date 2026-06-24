@@ -5,7 +5,7 @@ DATA_ROOT := data/GT
 CONFIG    := src/pose24/configs/rtmw3d_l_finetune_pose24.py
 WORK_DIR  := work_dirs/pose24_v2
 
-.PHONY: help splits test test-unit test-pipeline train lint pre-commit clean demo
+.PHONY: help splits test test-unit test-pipeline train lint pre-commit clean demo demo-tunnel
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -66,10 +66,19 @@ visualize:  ## Render GT vs Pred (2D overlay + 3D). Set CKPT=... for predictions
 	  --num $(NUM) --out vis $(if $(CKPT),--checkpoint $(CKPT),)
 
 # ── Demo ───────────────────────────────────────────────────────────────────
-PORT ?= 8252
-demo:
+PORT ?= 8888
+demo:  ## Launch Streamlit demo (local only)
 	PYTHONPATH=src $(UV) streamlit run demo/app.py \
 	  --server.port $(PORT) --server.address 0.0.0.0
+
+demo-tunnel:  ## Launch Streamlit demo + public Cloudflare quick tunnel
+	@trap 'kill 0' EXIT INT TERM; \
+	PYTHONPATH=src $(UV) streamlit run demo/app.py \
+	  --server.port $(PORT) --server.address 0.0.0.0 \
+	  --server.headless true & \
+	sleep 5; \
+	$(UV) cloudflared tunnel --url http://localhost:$(PORT); \
+	wait
 
 # ── Code quality ───────────────────────────────────────────────────────────
 lint:  ## Run ruff linter

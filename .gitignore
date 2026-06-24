@@ -15,3 +15,6 @@ work_dirs
 
 clone_code
 .pytest_cache
+.ruff_cache
+TECHNICAL_REPORT_OUTLINE.md
+project_markdown
