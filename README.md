@@ -3,43 +3,42 @@
 UI bằng **Streamlit** để chạy 3D pose estimation với [b-arac/rtmpose3d](https://github.com/b-arac/rtmpose3d).
 Cho phép **truyền model (checkpoint đã fine-tune) vào** rồi inference trên ảnh, hiển thị 2D keypoints overlay + 3D skeleton.
 
-App: demo/rtm/app.py
+App: `demo/app.py`
 
 ## Môi trường
 
 Máy đích: **NVIDIA GB10 (Grace Blackwell, aarch64)**, CUDA driver 580, toolkit hệ thống CUDA 13.0.
-Điểm mấu chốt: kiến trúc **aarch64** + GPU Blackwell (sm_120) nên phải dùng PyTorch `cu128`, và `mmcv`
-không có wheel sẵn -> **build từ source** với một CUDA toolkit **12.8** (khớp major với torch cu128).
+Điểm mấu chốt: kiến trúc **aarch64** + GPU Blackwell (sm_120), `mmcv` không có wheel sẵn
+phù hợp nên phải **build từ source** với CUDA toolkit khớp major với PyTorch.
+
+Môi trường đã verify hiện tại:
+
+- `torch==2.12.1+cu130`
+- CUDA toolkit build `mmcv`: `/usr/local/cuda-13.0`
+- `mmcv==2.2.0`
+- `mmpose==1.3.2`, `mmdet==3.3.0`, `mmengine==0.10.7`
+- kiểm tra stack: `uv run python -c "import torch, cv2, mmcv, mmpose, mmengine; print('ok')"`
 
 Quản lý môi trường bằng `uv` (`.venv` trong repo).
 
-### 1. UI + PyTorch (cu128)
+### 1. UI + PyTorch
 
     uv sync
-    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+Nếu môi trường chưa có PyTorch, cài bản CUDA phù hợp với máy. Với setup hiện tại đang dùng
+PyTorch `cu130`; nếu đổi sang bản khác thì bước build `mmcv` bên dưới cũng phải đổi CUDA
+toolkit tương ứng.
 
 Kiểm tra GPU:
 
-    uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+    uv run python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 
-### 2. CUDA toolkit 12.8 (để build mmcv)
+### 2. Build mmcv từ source với CUDA 13.0
 
-Toolkit hệ thống là 13.0 (major mismatch với torch cu128 -> PyTorch chặn build).
-Lấy nvcc 12.8 độc lập qua micromamba (không cần sudo):
+Với môi trường hiện tại `torch==2.12.1+cu130`, build `mmcv` bằng toolkit hệ thống
+`/usr/local/cuda-13.0`:
 
-    curl -Ls https://micro.mamba.pm/api/micromamba/linux-aarch64/latest | tar -xvj bin/micromamba
-
-    MAMBA_ROOT_PREFIX=$HOME/micromamba ./bin/micromamba create -y -p $HOME/cuda128 \
-      -c nvidia -c conda-forge \
-      "cuda-nvcc=12.8" "cuda-cudart-dev=12.8" "cuda-cccl=12.8" "cuda-nvtx=12.8" \
-      "libcusparse-dev=12" "libcublas-dev=12" "libcusolver-dev=11"
-
-Trên aarch64 (sbsa) header lib nằm ở `$HOME/cuda128/targets/sbsa-linux/include`,
-nên build mmcv phải thêm `CPATH` trỏ vào đó (xem bước 3). Build mmcv mất ~1 giờ.
-
-### 3. Build mmcv từ source
-
-    export CUDA_HOME=$HOME/cuda128
+    export CUDA_HOME=/usr/local/cuda-13.0
     export PATH=$CUDA_HOME/bin:$PATH
     export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$CUDA_HOME/targets/sbsa-linux/lib:$LD_LIBRARY_PATH
     export CPATH=$CUDA_HOME/targets/sbsa-linux/include:$CPATH
@@ -47,28 +46,40 @@ nên build mmcv phải thêm `CPATH` trỏ vào đó (xem bước 3). Build mmcv
     export MMCV_WITH_OPS=1 FORCE_CUDA=1 MAX_JOBS=8
     export TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
 
-    uv pip install "setuptools<70" wheel       # cung cấp pkg_resources cho build
+    uv pip install --force-reinstall opencv-python-headless
+    uv pip install "setuptools<70" wheel
     uv pip install "mmcv==2.2.0" --no-binary mmcv --no-build-isolation
 
-### 4. mmpose / mmdet / rtmpose3d
+Build thực tế trên máy này mất khoảng 32 phút. Nếu build quá nặng, có thể giảm
+`MAX_JOBS=4`.
+
+Sau khi build:
+
+    uv run python -c "import torch, cv2, mmcv, mmpose, mmengine; print('ok')"
+
+### 3. mmpose / mmdet
 
 xtcocotools (dep của mmpose) cần build, nên cài Cython trước rồi dùng `--no-build-isolation`:
 
     uv pip install cython numpy
     uv pip install xtcocotools --no-build-isolation
     uv pip install "mmengine>=0.7.0" "mmdet>=3.0.0" "mmpose>=1.0.0" tqdm --no-build-isolation
-    uv pip install -e demo/rtm --no-deps --no-build-isolation
+
+### Ghi chú nếu dùng torch cu128 cũ
+
+Một setup cũ từng dùng PyTorch `cu128` và CUDA toolkit riêng tại `$HOME/cuda128`.
+Chỉ dùng đường đó nếu `torch.version.cuda` là `12.8`; không trộn `torch cu130` với
+`CUDA_HOME=$HOME/cuda128` vì build `mmcv` sẽ lệch CUDA major.
 
 ## Chạy app
 
-Dùng script `run.sh` (đã set sẵn `LD_LIBRARY_PATH` tới CUDA 12.8 libs cho runtime):
+Chạy demo:
 
-    ./run.sh
+    make demo
 
 Hoặc thủ công:
 
-    export LD_LIBRARY_PATH=$HOME/cuda128/lib64:$HOME/cuda128/targets/sbsa-linux/lib:$LD_LIBRARY_PATH
-    uv run streamlit run demo/rtm/app.py
+    PYTHONPATH=src uv run streamlit run demo/app.py --server.port 8252 --server.address 0.0.0.0
 
 Trong sidebar:
 - **📥 Tải model về**: clone checkpoint ngay trong app — từ *URL trực tiếp*,
