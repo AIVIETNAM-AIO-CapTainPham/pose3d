@@ -2,8 +2,8 @@ UV      := uv run
 PYTEST  := uv run pytest
 
 DATA_ROOT := data/GT
-CONFIG    := src/pose24/configs/rtmw3d_l_finetune_pose24.py
-WORK_DIR  := work_dirs/pose24_v2
+CONFIG    ?= src/pose24/configs/rtmw3d_l_finetune_pose24_v3.py
+WORK_DIR  ?= work_dirs/pose24_v3
 
 .PHONY: help splits test test-unit test-pipeline train lint pre-commit clean demo demo-tunnel
 
