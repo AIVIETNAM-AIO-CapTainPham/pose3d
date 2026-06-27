@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+# data
+data/
+logs/
+*.db
+# model weights (large binaries)
+*.pt
+*.onnx
+# secrets
+cookies.txt
+cookies.json
+.env
+venv
+images
+logs

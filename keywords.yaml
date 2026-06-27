@@ -1,0 +1,18 @@
+# ═══════════════════════════════════════════════════════════
+#  Keywords to scrape
+#  Each entry becomes a subfolder inside data/images/
+# ═══════════════════════════════════════════════════════════
+
+keywords:
+  - "pose on chair"
+  - "pose on stairs"
+  - "pose on city"
+  - "pose on park"
+  - "pose on cafe"
+  - "pose on travel"
+  - "pose on sofa"
+  - "pose on airport"
+  - "pose on mall"
+  - "pose on mountain"
+  - "pose on motorcycle"
+  - "pose ideas for events"

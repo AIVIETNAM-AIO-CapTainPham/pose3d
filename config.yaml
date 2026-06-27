@@ -1,0 +1,44 @@
+# ═══════════════════════════════════════════════════════════
+#  Pose Image Scraper — Main Configuration
+# ═══════════════════════════════════════════════════════════
+
+# --- Platforms ---
+platforms:
+  pinterest:
+    enabled: true
+    max_per_keyword: 100          # 0 = unlimited
+    sleep_between_requests: 0.5
+    timeout: 3600               # seconds per keyword
+
+  google:
+    enabled: true
+    max_per_keyword: 100
+    max_concurrency: 4
+    request_delay: 1.5
+    max_retries: 4
+    backoff_base: 2.0
+    timeout: 30.0
+    image_filter:
+      image_type: "photo"       # photo | clipart | lineart | face | animated
+      size: "large"             # large | medium | icon
+
+# --- Keywords ---
+# Keywords are stored in a separate file: keywords.yaml
+# Edit that file to add/remove/change keywords.
+
+# --- Paths ---
+paths:
+  cookies: "./cookies.txt"      # Netscape-format cookies for Pinterest
+  output_dir: "./data/images"
+  hash_db: "./data/hashes.db"
+  log_dir: "./logs"
+
+# --- Person Filter (YOLOv11) ---
+person_filter:
+  model: "yolo11x.pt"           # path or model name (auto-downloaded by ultralytics)
+  confidence: 0.4
+  min_area_ratio: 0.333         # largest person bbox must cover >= 1/3 of image
+
+# --- General ---
+sleep_between_images: 0.5
+log_level: "INFO"
