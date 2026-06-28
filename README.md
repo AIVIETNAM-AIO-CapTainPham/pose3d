@@ -113,6 +113,26 @@ skeleton 3D tương tác (plotly).
 
 `data/GT/{images,labels}` — ảnh + nhãn ground-truth cho fine-tune.
 
+## Training
+
+Có 4 config sẵn (`src/pose24/configs/rtmw3d_l_finetune_pose24_v1.py` →
+`_v4.py`, khác nhau ở learning rate / regularization / `val_interval` — chi
+tiết trong `ARCHITECTURE.md`). Đổi `CONFIG`/`WORK_DIR` để chọn version:
+
+    make train CONFIG=src/pose24/configs/rtmw3d_l_finetune_pose24_v3.py WORK_DIR=work_dirs/pose24_v3
+
+Resume từ checkpoint gần nhất (đọc `last_checkpoint` trong work_dir):
+
+    make train-resume CONFIG=src/pose24/configs/rtmw3d_l_finetune_pose24_v3.py WORK_DIR=work_dirs/pose24_v3
+
+Đánh giá checkpoint (in MPJPE + P-MPJPE trên tập val):
+
+    make eval CKPT_BEST=work_dirs/pose24_v3/best_MPJPE_epoch_30.pth
+
+Xuất ảnh GT-vs-Pred (2D overlay + 3D skeleton):
+
+    make visualize CKPT=work_dirs/pose24_v3/best_MPJPE_epoch_30.pth NUM=4
+
 ## Cấu trúc thư mục
 
     POSE3D/

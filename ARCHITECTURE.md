@@ -396,7 +396,7 @@ neck → feat_t (N,1024,9,12),  feat_b (N,512,18,24)
 
 ## 6. Loss functions
 
-Training dùng **2 loss bổ sung nhau** (xem [config](src/pose24/configs/rtmw3d_l_finetune_pose24.py)):
+Training dùng **2 loss bổ sung nhau** (xem [config](src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py)):
 
 | Loss | Không gian | Vai trò | Vì sao cần |
 |------|-----------|---------|-----------|
@@ -760,14 +760,14 @@ Giá trị này có đơn vị pixel, dùng để theo dõi xu hướng — khô
 
 ## 10. Tóm tắt thay đổi so với RTMPose3D gốc
 
-### 10.1 Module ported từ `clone_code/` (không sửa logic)
+### 10.1 Module ported từ [b-arac/rtmpose3d](https://github.com/b-arac/rtmpose3d) (không sửa logic)
 
-| Module | File gốc | File mới |
+| Module | Module gốc | File mới |
 |--------|----------|----------|
-| `SimCC3DLabel` | `clone_code/pose3d/rtmpose3d/codec` | `src/pose24/codecs/simcc_3d_label.py` |
-| `RTMW3DHead` | `clone_code/pose3d/rtmpose3d/head` | `src/pose24/models/rtmw3d_head.py` |
-| `KLDiscretLossWithWeight` | `clone_code/pose3d/rtmpose3d/loss` | `src/pose24/models/loss.py` |
-| `TopdownPoseEstimator3D` | `clone_code/pose3d/rtmpose3d/estimator` | `src/pose24/models/pose_estimator.py` |
+| `SimCC3DLabel` | `rtmpose3d.models.simcc_3d_label` | `src/pose24/codecs/simcc_3d_label.py` |
+| `RTMW3DHead` | `rtmpose3d.models.rtmw3d_head` | `src/pose24/models/rtmw3d_head.py` |
+| `KLDiscretLossWithWeight` | `rtmpose3d.models.loss` | `src/pose24/models/loss.py` |
+| `TopdownPoseEstimator3D` | `rtmpose3d.models.pose_estimator` | `src/pose24/models/pose_estimator.py` |
 
 ### 10.2 Thay đổi trong `SimCC3DLabel.encode()`
 
@@ -794,7 +794,7 @@ self.pipeline = Compose(
 
 ### 10.4 Thêm mới: `Pose3DStructureLoss`
 
-Thay thế `BoneLoss` từ clone_code (argmax-based, zero gradient).
+Thay thế `BoneLoss` của RTMPose3D gốc (argmax-based, zero gradient).
 
 | | BoneLoss (cũ) | Pose3DStructureLoss (mới) |
 |--|--|--|
