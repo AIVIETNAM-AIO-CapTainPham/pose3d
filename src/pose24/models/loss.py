@@ -1,7 +1,4 @@
-"""KLDiscretLossWithWeight — weighted KL loss for 3D SimCC.
-
-Ported from clone_code/pose3d/rtmpose3d (read-only reference).
-"""
+"""KLDiscretLossWithWeight — weighted KL loss for 3D SimCC."""
 
 from __future__ import annotations
 

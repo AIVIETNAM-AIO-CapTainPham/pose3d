@@ -23,7 +23,7 @@ def flipped_sample(gt_data_root: str, val_split: str):
     from mmpose.registry import DATASETS, TRANSFORMS
 
     init_default_scope("mmpose")
-    cfg = Config.fromfile("src/pose24/configs/rtmw3d_l_finetune_pose24.py")
+    cfg = Config.fromfile("src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py")
     ds_cfg = dict(cfg.val_dataloader.dataset)
     ds_cfg.update(data_root=gt_data_root, ann_file=val_split)
     ds = DATASETS.build(ds_cfg)
