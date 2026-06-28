@@ -17,7 +17,7 @@ def cfg():
     from mmengine.registry import init_default_scope
 
     init_default_scope("mmpose")
-    c = Config.fromfile("src/pose24/configs/rtmw3d_l_finetune_pose24.py")
+    c = Config.fromfile("src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py")
     c.model.backbone.init_cfg = None  # no network during tests
     return c
 

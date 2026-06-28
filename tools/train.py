@@ -7,8 +7,8 @@ estimator, head, losses and visualisation hook are registered.
 Examples
 --------
     PYTHONPATH=src python tools/train.py \
-        src/pose24/configs/rtmw3d_l_finetune_pose24.py \
-        --work-dir work_dirs/pose24
+        src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py \
+        --work-dir work_dirs/pose24_v2
 
     # quick smoke run with config overrides:
     PYTHONPATH=src python tools/train.py <cfg> \

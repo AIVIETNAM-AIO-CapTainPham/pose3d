@@ -44,8 +44,8 @@ from pose24.keypoints import (  # noqa: E402
 )
 
 # ── constants ──────────────────────────────────────────────────────────────
-CONFIG = str(ROOT / "src/pose24/configs/rtmw3d_l_finetune_pose24.py")
-WORK_DIR = ROOT / "work_dirs/pose24"
+WORK_DIRS_ROOT = ROOT / "work_dirs"
+DEFAULT_CONFIG = str(ROOT / "src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py")
 ORIG_CKPT = ROOT / "work_dirs/original_rtmw3d/rtmw3d-l_cocktail14.pth"
 
 GT_COLOR = "#2ecc40"  # green
@@ -61,17 +61,40 @@ BODY17 = list(range(17))
 BODY17_EDGES = [(i, j) for (i, j) in SKELETON_EDGES if i < 17 and j < 17]
 
 
+# ── work_dir discovery ───────────────────────────────────────────────────────
+
+
+def list_work_dirs() -> list[Path]:
+    """Work_dirs that contain at least one checkpoint."""
+    if not WORK_DIRS_ROOT.exists():
+        return []
+    found = [
+        d
+        for d in sorted(WORK_DIRS_ROOT.iterdir())
+        if d.is_dir() and d.name != "original_rtmw3d" and any(d.glob("*.pth"))
+    ]
+    return found
+
+
+def resolve_config_for(work_dir: Path) -> str:
+    """Each work_dir holds a copy of the exact config used to train it
+    (mmengine's Runner copies it in automatically) — read that one back
+    instead of guessing/hard-coding a work_dir → config mapping."""
+    cfgs = sorted(work_dir.glob("*.py"))
+    return str(cfgs[0]) if cfgs else DEFAULT_CONFIG
+
+
 # ── cached resource loaders ────────────────────────────────────────────────
 
 
 @st.cache_resource(show_spinner="Loading dataset…")
-def load_dataset(split: str):
+def load_dataset(split: str, config: str):
     from mmengine.config import Config
     from mmengine.registry import init_default_scope
     from mmpose.registry import DATASETS
 
     init_default_scope("mmpose")
-    cfg = Config.fromfile(CONFIG)
+    cfg = Config.fromfile(config)
     return DATASETS.build(cfg[f"{split}_dataloader"]["dataset"])
 
 
@@ -80,13 +103,13 @@ def _device() -> str:
 
 
 @st.cache_resource(show_spinner="Loading finetuned model…")
-def load_model(checkpoint: str):
+def load_model(checkpoint: str, config: str):
     from mmengine.config import Config
     from mmengine.registry import init_default_scope
     from mmpose.registry import MODELS
 
     init_default_scope("mmpose")
-    cfg = Config.fromfile(CONFIG)
+    cfg = Config.fromfile(config)
     cfg.model.backbone.init_cfg = None
     model = MODELS.build(cfg.model)
     # PyTorch ≥ 2.6 defaults weights_only=True which breaks mmengine checkpoints.
@@ -98,7 +121,7 @@ def load_model(checkpoint: str):
 
 
 @st.cache_resource(show_spinner="Loading original RTMPose3D (133-kpt)…")
-def load_original_model():
+def load_original_model(config: str):
     """Build the stock RTMPose3D-L (cocktail14, 133 wholebody kpts).
 
     Re-uses our ported classes (identical architecture) — only out_channels and
@@ -112,7 +135,7 @@ def load_original_model():
         return None, None
 
     init_default_scope("mmpose")
-    cfg = Config.fromfile(CONFIG)
+    cfg = Config.fromfile(config)
     mc = copy.deepcopy(cfg.model)
     mc["backbone"]["init_cfg"] = None
     mc["head"]["out_channels"] = 133
@@ -365,8 +388,8 @@ def fig_error_bar(errs_mm):
 # ── epoch viz gallery ─────────────────────────────────────────────────────
 
 
-def render_epoch_gallery():
-    vis_dir = WORK_DIR / "vis"
+def render_epoch_gallery(work_dir: Path):
+    vis_dir = work_dir / "vis"
     epoch_dirs = (
         sorted(vis_dir.glob("epoch_*"), key=lambda p: int(p.name.split("_")[1]))
         if vis_dir.exists()
@@ -400,22 +423,35 @@ def main():
     # ── sidebar ─────────────────────────────────────────────────────────────
     with st.sidebar:
         st.header("⚙️ Settings")
+
+        work_dirs = list_work_dirs()
+        if not work_dirs:
+            st.error("No work_dirs with checkpoints found under work_dirs/")
+            st.stop()
+        wd_names = [d.name for d in work_dirs]
+        wd_sel = st.selectbox(
+            "Work dir (run)",
+            wd_names,
+            index=len(wd_names) - 1,  # most recent run by default
+            help="Each work_dirs/<run> keeps its own checkpoints + the exact "
+            "config used to train it — switching here re-resolves both.",
+        )
+        work_dir = work_dirs[wd_names.index(wd_sel)]
+        config = resolve_config_for(work_dir)
+        st.caption(f"config: `{Path(config).name}`")
+
         source = st.radio("Input source", ["Dataset sample", "Upload image"])
 
-        ckpts = sorted(WORK_DIR.glob("best_MPJPE_epoch_*.pth")) + sorted(
-            WORK_DIR.glob("epoch_*.pth")
+        ckpts = sorted(work_dir.glob("best_MPJPE_epoch_*.pth")) + sorted(
+            work_dir.glob("epoch_*.pth")
         )
         if not ckpts:
-            st.error("No finetuned checkpoints in work_dirs/pose24/")
+            st.error(f"No checkpoints in {work_dir}")
             st.stop()
         names = [p.name for p in ckpts]
-        default = (
-            names.index("best_MPJPE_epoch_30.pth")
-            if "best_MPJPE_epoch_30.pth" in names
-            else 0
-        )
-        ckpt_sel = st.selectbox("Finetuned checkpoint", names, index=default)
-        checkpoint = str(WORK_DIR / ckpt_sel)
+        default = next((i for i, n in enumerate(names) if "best" in n), 0)
+        ckpt_sel = st.selectbox("Checkpoint", names, index=default)
+        checkpoint = str(work_dir / ckpt_sel)
 
         show_orig = st.toggle(
             "Compare with original RTMPose3D", value=ORIG_CKPT.exists()
@@ -424,16 +460,16 @@ def main():
             st.warning("Original checkpoint not found — download first.")
             show_orig = False
 
-    model, device = load_model(checkpoint)
+    model, device = load_model(checkpoint, config)
     orig_model = orig_dev = None
     if show_orig:
-        orig_model, orig_dev = load_original_model()
+        orig_model, orig_dev = load_original_model(config)
 
     # ── resolve input → (image_rgb, gt_2d, gt_3d, visible, pred fns) ─────────
     if source == "Dataset sample":
         with st.sidebar:
             split = st.selectbox("Split", ["val", "test", "train"])
-        dataset = load_dataset(split)
+        dataset = load_dataset(split, config)
         n = len(dataset)
         with st.sidebar:
             if st.button("🎲 Random sample"):
@@ -542,7 +578,7 @@ def main():
         plt.close("all")
 
     st.divider()
-    render_epoch_gallery()
+    render_epoch_gallery(work_dir)
 
 
 if __name__ == "__main__":

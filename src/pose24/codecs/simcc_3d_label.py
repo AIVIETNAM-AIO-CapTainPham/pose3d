@@ -1,7 +1,4 @@
-"""SimCC3DLabel — 3D keypoint codec for RTMPose3D finetuning.
-
-Ported from clone_code/pose3d/rtmpose3d (read-only reference).
-"""
+"""SimCC3DLabel — 3D keypoint codec for RTMPose3D finetuning."""
 
 from __future__ import annotations
 

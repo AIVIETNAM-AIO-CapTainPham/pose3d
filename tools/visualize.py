@@ -28,7 +28,7 @@ import numpy as np
 import pose24  # noqa: F401 — registers dataset / model / codec
 from pose24.visualization import render_comparison
 
-DEFAULT_CONFIG = "src/pose24/configs/rtmw3d_l_finetune_pose24.py"
+DEFAULT_CONFIG = "src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py"
 
 
 def parse_args() -> argparse.Namespace:
