@@ -1,9 +1,14 @@
-"""RTMPose3D-L finetune config for 24-keypoint MHR70 body subset.
+"""RTMPose3D-L finetune config — v2 (used for work_dirs/pose24_v2).
+
+LR giảm một nửa so với v1 (1e-4→5e-5), max_epochs 200→100, cosine decay bắt
+đầu sớm hơn nhiều (epoch 100→20) — để chống overfit quan sát được ở v1 (best
+epoch 30, sau đó tệ dần tới epoch 200). Đây cũng là `_base_` cho v3/v4.
 
 Usage
 -----
-    mim train mmpose src/pose24/configs/rtmw3d_l_finetune_pose24.py \
-        --work-dir work_dirs/pose24
+    PYTHONPATH=src uv run python tools/train.py \
+        src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py \
+        --work-dir work_dirs/pose24_v2 --amp
 """
 
 _base_ = ["mmpose::_base_/default_runtime.py"]

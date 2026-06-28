@@ -15,7 +15,7 @@ def val_dataset_with_pipeline(val_split: str, gt_data_root: str) -> GTJsonDatase
     import os
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-    cfg = Config.fromfile("src/pose24/configs/rtmw3d_l_finetune_pose24.py")
+    cfg = Config.fromfile("src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py")
     return GTJsonDataset(
         data_root=gt_data_root,
         ann_file=val_split,

@@ -17,7 +17,9 @@ import pose24  # noqa: F401
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("checkpoint")
-    p.add_argument("--config", default="src/pose24/configs/rtmw3d_l_finetune_pose24.py")
+    p.add_argument(
+        "--config", default="src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py"
+    )
     p.add_argument("--split", default="val", choices=["val", "test"])
     p.add_argument("--work-dir", default="work_dirs/pose24_eval")
     return p.parse_args()

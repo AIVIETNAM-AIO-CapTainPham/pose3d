@@ -1,7 +1,4 @@
-"""TopdownPoseEstimator3D — converts SimCC output to camera-frame 3D keypoints.
-
-Ported from clone_code/pose3d/rtmpose3d (read-only reference).
-"""
+"""TopdownPoseEstimator3D — converts SimCC output to camera-frame 3D keypoints."""
 
 from __future__ import annotations
 

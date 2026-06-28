@@ -1,7 +1,4 @@
-"""RTMW3DHead — RTMPose-Wholebody 3D SimCC head.
-
-Ported from clone_code/pose3d/rtmpose3d (read-only reference).
-"""
+"""RTMW3DHead — RTMPose-Wholebody 3D SimCC head."""
 
 from __future__ import annotations
 

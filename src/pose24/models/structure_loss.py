@@ -1,12 +1,12 @@
 """Pose3DStructureLoss — differentiable structural pose loss.
 
-Design follows theia's ``pose_structure_loss`` (clone_code/theia, read-only):
-decompose the pose into a *root* term (pelvis localization), a *relative* term
-(root-relative per-joint geometry) and a *bone* term (edge-length consistency),
-each a masked Smooth-L1 so invisible joints contribute no gradient.
+Decomposes the pose into a *root* term (pelvis localization), a *relative*
+term (root-relative per-joint geometry) and a *bone* term (edge-length
+consistency), each a masked Smooth-L1 so invisible joints contribute no
+gradient.
 
-Unlike theia (which regresses metric metres directly), the RTMPose3D head emits
-SimCC distributions.  This loss therefore operates on **normalised [0, 1]
+The RTMPose3D head emits SimCC distributions rather than regressing metric
+coordinates directly, so this loss operates on **normalised [0, 1]
 coordinates** obtained from the head via *soft-argmax* — fully differentiable,
 so (unlike the argmax-based ``BoneLoss`` it replaces) gradient actually flows
 back to ``cls_x/y/z``.
