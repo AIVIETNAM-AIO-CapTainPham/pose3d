@@ -171,6 +171,11 @@ pixel_y = focal_length * Y / Z + cy
 - Đơn vị: **pixel**
 - Dùng trong công thức chiếu 3D → 2D ở trên
 - Giá trị này lớn → camera zoom in / góc nhìn hẹp
+- ⚠️ **Không phải EXIF/thông số camera vật lý đo được** — là giá trị do
+  SAM-3D-Body **ước lượng** lúc tạo pseudo-GT (`pose3d_source: "sam3d"`).
+  RTMPose3D không tự suy luận ra `f`, chỉ tiêu thụ giá trị này như hằng số đã
+  biết khi back-project 2D→3D. Phân phối ước lượng này rất rộng giữa các
+  sample (~775–6900px, std~764) — xem `ARCHITECTURE.md` §10.9.
 
 ---
 

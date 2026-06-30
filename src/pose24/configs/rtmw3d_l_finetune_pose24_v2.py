@@ -2,7 +2,7 @@
 
 LR giảm một nửa so với v1 (1e-4→5e-5), max_epochs 200→100, cosine decay bắt
 đầu sớm hơn nhiều (epoch 100→20) — để chống overfit quan sát được ở v1 (best
-epoch 30, sau đó tệ dần tới epoch 200). Đây cũng là `_base_` cho v3/v4.
+epoch 30, sau đó tệ dần tới epoch 200).
 
 Usage
 -----

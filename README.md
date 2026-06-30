@@ -133,6 +133,18 @@ Xuất ảnh GT-vs-Pred (2D overlay + 3D skeleton):
 
     make visualize CKPT=work_dirs/pose24_v3/best_MPJPE_epoch_30.pth NUM=4
 
+Vẽ biểu đồ MPJPE/P-MPJPE theo epoch (gộp mọi lần resume trong work_dir, lưu
+`metrics_plot.png`):
+
+    make plot-metrics WORK_DIR=work_dirs/pose24_v3
+
+So per-joint MPJPE giữa checkpoint finetune và RTMPose3D-L gốc (pretrained,
+133-kp cocktail14 — chỉ 17/24 khớp COCO body có tương ứng, 7 khớp giải phẫu
+phụ báo N/A) trên cùng GT, kèm 3 ảnh phân tích (bar chart + 2 boxplot phân
+phối lỗi) lưu vào `WORK_DIR/compare_baseline/`:
+
+    make compare-baseline CKPT_BEST=work_dirs/pose24_v3/best_MPJPE_epoch_30.pth WORK_DIR=work_dirs/pose24_v3
+
 ## Cấu trúc thư mục
 
     POSE3D/

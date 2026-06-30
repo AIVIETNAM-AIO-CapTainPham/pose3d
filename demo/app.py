@@ -89,13 +89,27 @@ def resolve_config_for(work_dir: Path) -> str:
 
 @st.cache_resource(show_spinner="Loading dataset…")
 def load_dataset(split: str, config: str):
+    """Build the dataset for browsing, always with the *val* pipeline.
+
+    train_dataloader.dataset.pipeline includes RandomFlip/RandomBBoxTransform/
+    RandomHalfBody — random crop scale/rotation applied fresh on every access.
+    Using it here would feed the model a randomly distorted crop while GT
+    (read separately via get_data_info, which bypasses the pipeline) stays
+    undistorted — the two would no longer refer to the same image content, so
+    overlaying Pred on the original image looks like the model is wildly
+    wrong even on samples it was trained on. Swap in val_pipeline (resize-only,
+    deterministic) regardless of which split's annotations are browsed.
+    """
     from mmengine.config import Config
     from mmengine.registry import init_default_scope
     from mmpose.registry import DATASETS
 
     init_default_scope("mmpose")
     cfg = Config.fromfile(config)
-    return DATASETS.build(cfg[f"{split}_dataloader"]["dataset"])
+    ds_cfg = dict(cfg[f"{split}_dataloader"]["dataset"])
+    ds_cfg["pipeline"] = cfg["val_pipeline"]
+    ds_cfg["test_mode"] = True
+    return DATASETS.build(ds_cfg)
 
 
 def _device() -> str:
