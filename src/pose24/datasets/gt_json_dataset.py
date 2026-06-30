@@ -17,6 +17,19 @@ from pose24.keypoints import MHR70_INDICES, NUM_KEYPOINTS
 
 _IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 
+# Ankle/knee MPJPE runs 3-5x other joints (kinematic-chain error accumulation:
+# the hip root is centered out for free, knee/ankle errors compound on top of
+# it). GT has no real per-joint visibility, so keypoints_visible is otherwise
+# flat 1.0 everywhere — this is the only lever available to tell the loss
+# "these joints matter more". Values must stay >= 0.5: SimCC3DLabel's Gaussian
+# generator skips emitting any target at all below that (hard cutoff, not a
+# soft down-weight), while SimpleMPJPE's visibility mask is `astype(bool)` so
+# any nonzero weight still counts the joint in eval MPJPE — going below 0.5
+# would silently train the head toward an all-zero target while still being
+# scored as if it were a normal sample.
+_LEG_JOINT_INDICES = (13, 14, 15, 16)  # left/right knee, left/right ankle
+_LEG_BOOST_WEIGHT = 1.8
+
 # Absolute path to pose24.py metainfo config (resolved at import time)
 _METAINFO_FILE = str(
     Path(__file__).resolve().parent.parent
@@ -82,6 +95,13 @@ class GTJsonDataset(BaseCocoStyleDataset):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compute_keypoint_weights() -> np.ndarray:
+        """Per-joint loss weight: boost knee/ankle."""
+        weights = np.ones(NUM_KEYPOINTS, dtype=np.float32)
+        weights[list(_LEG_JOINT_INDICES)] = _LEG_BOOST_WEIGHT
+        return weights
 
     def _find_image(self, sample_id: str, hint: str | None) -> str | None:
         img_dir = self._gt_data_root / "images"
@@ -165,6 +185,23 @@ class GTJsonDataset(BaseCocoStyleDataset):
         if img_path is None:
             return None
 
+        # Per-sample camera intrinsics (focal_length_px varies hugely across
+        # this dataset's mixed sources — median ~2074px but anywhere from
+        # ~775 to ~6900px). Without this, TopdownPoseEstimator3D falls back to
+        # one fixed focal length for every sample, which back-projects 2D→3D
+        # camera-space coords at the wrong scale whenever a sample's true f
+        # differs from that fallback (the further f is from the fallback, the
+        # larger the resulting MPJPE outlier — pure projection-scale error,
+        # unrelated to how well the model actually localised the keypoints).
+        focal_px = raw.get("focal_length_px")
+        camera_param = (
+            dict(f=[focal_px, focal_px], c=[width / 2.0, height / 2.0])
+            if focal_px
+            else None
+        )
+
+        keypoint_weights = self._compute_keypoint_weights()
+
         return dict(
             id=idx,
             img_id=idx,
@@ -172,8 +209,9 @@ class GTJsonDataset(BaseCocoStyleDataset):
             bbox=np.array([[x1, y1, x2, y2]], dtype=np.float32),  # (1,4)
             bbox_score=np.ones((1,), dtype=np.float32),
             keypoints=kpts2d[np.newaxis],  # (1,24,2)
-            keypoints_visible=np.ones((1, NUM_KEYPOINTS), dtype=np.float32),
+            keypoints_visible=keypoint_weights[np.newaxis],  # (1,24)
             keypoints_3d=kpts3d[np.newaxis],  # (1,24,3)
+            camera_param=[camera_param],  # per-instance, matches bbox's (1,...)
             num_keypoints=NUM_KEYPOINTS,
             category_id=1,
             iscrowd=False,

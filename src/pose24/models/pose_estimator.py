@@ -65,12 +65,17 @@ class TopdownPoseEstimator3D(TopdownPoseEstimator):
                 f = np.array(camera_params["f"])
                 c = np.array(camera_params["c"])
             else:
-                # GTJsonDataset has no per-sample camera_params, so this is the
-                # path actually taken. f calibrated from GT (~2074 px); the old
-                # RTMPose3D default (1145) was ~1.8x too short → back-projected
-                # X,Y ~1.8x too large (MPJPE scale error).
+                # Only hit for samples truly missing focal_length_px (none in
+                # GTJsonDataset's GT, since it now reads the per-sample value)
+                # or for ad-hoc images (e.g. demo upload) with no GT at all.
+                # f calibrated from GT median (~2074 px). Note ori_shape is
+                # (H, W) per mmcv/mmpose convention — c must be (cx, cy) =
+                # (W/2, H/2), so build it explicitly rather than halving
+                # ori_shape directly (that would silently swap cx/cy on any
+                # non-square image, which is ~96% of this dataset).
                 f = np.array(self.camera_param["f"])
-                c = np.array(data_sample.ori_shape) / 2
+                h, w = data_sample.ori_shape
+                c = np.array([w / 2.0, h / 2.0])
             kpts_pixel = np.concatenate(
                 [keypoints_2d, (keypoints_3d[..., 2] + gt_instances.root_z)[..., None]],
                 axis=-1,
