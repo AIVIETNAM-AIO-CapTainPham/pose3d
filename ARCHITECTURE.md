@@ -641,11 +641,11 @@ tăng random scale lên [0.5, 1.5] + rotate 90°. Ý tưởng: cuối quá trìn
 ### 8.2 Optimizer & Learning-rate schedule
 
 ```
-AdamW(lr=5e-5, weight_decay=0.05)
+AdamW(lr=2e-5, weight_decay=0.1)
 
 Warm-up: LinearLR  start_factor=0.01 → 1.0,  500 iterations đầu
-Decay:   CosineAnnealingLR, eta_min = lr×0.05,  begin=epoch 20 → end=epoch 100
-         T_max = end − begin = 80  (LR chạm đáy đúng lúc kết thúc)
+Decay:   CosineAnnealingLR, eta_min = lr×0.05,  begin=epoch 10 → end=epoch 200
+         T_max = end − begin = 190  (LR chạm đáy đúng lúc kết thúc)
 ```
 
 **Vì sao có warmup?** Đầu training trọng số head khởi tạo ngẫu nhiên, gradient lớn/nhiễu.
@@ -659,10 +659,10 @@ LR nhỏ để "lắng" vào, không dao động. Cosine giảm LR mượt theo 
 LR(t) = eta_min + (lr − eta_min) × (1 + cos(π·t/T_max)) / 2
 ```
 
-**Decay SỚM (begin=20) — quan trọng:** Phiên bản đầu để decay bắt đầu ở `max_epochs/2`
-(epoch 100), nhưng mô hình hội tụ từ ~epoch 25-30 và **LR cao phẳng quá lâu đẩy nó vào
-overfit** (xem §8.5). Đổi `begin=20` để LR giảm ngay sau khi hội tụ → tinh chỉnh nhẹ thay
-vì "nghiền" tiếp.
+**Decay SỚM (begin=10) — quan trọng:** Phiên bản đầu để decay bắt đầu ở `max_epochs/2`,
+nhưng mô hình hội tụ từ ~epoch 25-30 và **LR cao phẳng quá lâu đẩy nó vào overfit**
+(xem §8.5). Đổi `begin` sớm hơn (lần lượt 20 rồi 10 qua các config) để LR giảm ngay sau
+khi hội tụ → tinh chỉnh nhẹ thay vì "nghiền" tiếp.
 
 ### 8.2.1 EMA (Exponential Moving Average)
 
@@ -677,14 +677,20 @@ hơn. Checkpoint lưu cả hai; eval dùng bản EMA.
 
 | Config | Giá trị |
 |--------|---------|
-| Epochs | 100 (`max_epochs`) |
-| base_lr | 5e-5 |
+| Epochs | 200 (`max_epochs`) |
+| base_lr | 2e-5 |
+| weight_decay | 0.1 |
 | Batch size | 32 |
 | num_workers | 8 |
 | val_interval | mỗi 5 epoch |
 | AMP | bật (`AmpOptimWrapper`) — `--amp` |
 | EMA | momentum=0.0002 |
 | Max checkpoints | 3 (best + 2 gần nhất) |
+
+> Các giá trị này theo `rtmw3d_l_finetune_pose24_v3.py` — chỉnh trực tiếp file
+> đó nếu cần đổi tiếp; không có version mới nào được tạo riêng cho việc đổi
+> `max_epochs`/LR vì đây là hyperparameter runtime, không phải thay đổi
+> kiến trúc/thuật toán.
 
 ### 8.4 Checkpoint strategy
 
@@ -709,8 +715,10 @@ Train loss giảm 47% nhưng VAL MPJPE **tăng** từ epoch 30 → hai đường
 thuộc train set thay vì tổng quát hoá. Nguyên nhân: LR cao phẳng quá lâu + 16k ảnh là ít
 cho model lớn + không early-stop.
 
-**Khắc phục (config hiện tại):** `max_epochs=100`, `lr=5e-5`, **decay sớm từ epoch 20**
-(§8.2). Tuỳ chọn thêm: `weight_decay 0.05→0.1`, `dropout 0.1→0.2`, `EarlyStoppingHook`.
+**Khắc phục (config v3):** `lr=2e-5`, **decay sớm từ epoch 10** (§8.2),
+`weight_decay 0.05→0.1`, `dropout 0.1→0.2`, augmentation mạnh hơn (§8.1). `max_epochs`
+chỉnh theo nhu cầu thực tế (xem §8.3) — không phải hằng số cố định, vì mục tiêu của các
+thay đổi trên là đẩy điểm overfit lùi lại đủ xa để train dài hơn vẫn có ích.
 
 ---
 
@@ -856,26 +864,103 @@ Kiểm chứng: sau flip, `new_left_hip.z == old_right_hip.z` và `new_left_hip.
 ⚠️ Bug này làm **hỏng trọng số** (model học sai L/R suốt training) → **bắt buộc train
 lại**, không sửa được ở post-process.
 
-### 10.9 Sửa focal length fallback: `f = 1145 → 2074`
+### 10.9 Focal length: từ fallback cố định → per-sample từ GT
+
+**Vòng 1 — fallback cố định `f = 1145 → 2074`:**
 
 **Triệu chứng:** MPJPE ≈ 746 mm rất cao, nhưng P-MPJPE ≈ 91 mm tốt. Gap lớn = lỗi
 scale thuần (Procrustes của P-MPJPE khử scale nên không thấy). Trên demo: skeleton
 Pred to gấp ~2x GT.
 
 **Nguyên nhân:** `add_pred_to_datasample` back-project pixel → camera space bằng
-`X_cam = (u − cx)/f · Z_cam`. `GTJsonDataset` không có `camera_params` per-sample nên
-rơi vào nhánh fallback dùng `f = 1145` (default RTMPose3D). Nhưng SAM-3D-Body tạo GT
-với `f ≈ 2074 px` (median, recover từ tương ứng 2D↔3D). f nhỏ hơn 1.8x → X,Y back-proj
-lớn hơn 1.8x.
+`X_cam = (u − cx)/f · Z_cam`. `GTJsonDataset` (lúc đó) không truyền `camera_params`
+per-sample nên rơi vào nhánh fallback dùng `f = 1145` (default RTMPose3D). Nhưng
+SAM-3D-Body tạo GT với `f ≈ 2074 px` (median, recover từ tương ứng 2D↔3D). f nhỏ
+hơn 1.8x → X,Y back-proj lớn hơn 1.8x.
 
-**Fix:** fallback ở [pose_estimator.py](src/pose24/models/pose_estimator.py) đổi sang
-`f = 2074`. Đây là bước **decode/eval**, không nằm trong forward/loss/backprop →
-**không cần train lại** cho riêng lỗi này (chỉ ảnh hưởng MPJPE và visualization).
+**Fix vòng 1:** đổi fallback sang `f = 2074` — vẫn chỉ là 1 giá trị chung cho mọi
+sample, chưa giải quyết gốc.
+
+**Vòng 2 — phát hiện `focal_length_px` thật đã có sẵn trong GT, bị bỏ qua:**
+
+**Triệu chứng:** sau vòng 1, hầu hết sample MPJPE ổn, nhưng vẫn có outlier (ví dụ
+1 sample MPJPE = 1349 mm) — luôn cùng một vài sample cụ thể, không ngẫu nhiên.
+
+**Nguyên nhân:** GT JSON có sẵn field `focal_length_px` cho **từng** sample —
+nhưng đây **không phải thông số camera vật lý đo được**, mà là **ước lượng do
+SAM-3D-Body suy luận ra** lúc tạo pseudo-GT (`pose3d_source: "sam3d"` trong JSON;
+RTMPose3D không có khả năng tự suy luận focal length, nó chỉ nhận giá trị này như
+1 hằng số đã biết để back-project). Phân phối ước lượng này **rất rộng**: min≈775px,
+max≈6900px, std≈764 (đo trên 200 file). `f=2074` chỉ là median, không đại diện cho
+ảnh có `f` ước lượng lệch xa (ví dụ ảnh đó SAM-3D-Body ước lượng `f=10080`, gấp
+~4.86× giá trị fallback). `GTJsonDataset._parse_json` **chưa từng đọc field này** —
+mọi sample dùng đúng 1 `f` chung, nên sample có `f` ước lượng lệch xa median sẽ
+luôn cho MPJPE outlier do sai scale back-projection, dù model dự đoán đúng trong
+không gian ảnh.
+
+**Fix vòng 2:** [gt_json_dataset.py](src/pose24/datasets/gt_json_dataset.py) đọc
+`focal_length_px` + `image_size` từ JSON, đóng gói thành
+`camera_param=[{f:[fx,fx], c:[w/2,h/2]}]` mỗi sample (field số ít `camera_param`,
+mmpose tự pack thành `gt_instances.camera_params` qua `instance_mapping_table` của
+`SimCC3DLabel`). `TopdownPoseEstimator3D` đã có sẵn nhánh ưu tiên dùng
+`camera_params` per-sample khi tồn tại — giờ nhánh đó được dùng cho mọi sample
+train/val/eval, nhánh fallback (`f=2074`) chỉ còn áp dụng cho ảnh không có GT
+(ví dụ ảnh upload trong demo).
+
+**Verify:** MPJPE sample outlier giảm từ **1349 mm → 50.5 mm**.
+
+**Hạn chế còn lại:** vì `f` là ước lượng (không phải đo thật), MPJPE sau fix vẫn
+mang theo sai số ước lượng của SAM-3D-Body — fix này chỉ loại bỏ phần lỗi do
+**dùng 1 giá trị chung sai cho mọi sample**, không loại bỏ được sai số gốc nếu
+SAM-3D-Body ước lượng `f` không chính xác cho 1 ảnh cụ thể.
+
+Cả 2 bước đều chỉ ở **decode/eval** (không nằm trong forward/loss/backprop) →
+**không cần train lại** riêng cho bug này, chỉ ảnh hưởng MPJPE đo được và
+visualization.
+
+### 10.10 Đảo thứ tự `(cx, cy)` ở nhánh fallback camera intrinsics
+
+**Triệu chứng:** không lộ ra qua train/val/eval (vì sau §10.9 vòng 2, mọi GT sample
+đều có `camera_params` riêng, không đi qua fallback) — chỉ ảnh hưởng ảnh **không có
+GT**, ví dụ ảnh upload trong demo.
+
+**Nguyên nhân:** nhánh fallback tính `c = np.array(data_sample.ori_shape) / 2`.
+`ori_shape` theo convention mmcv/mmpose là `(H, W)`, nhưng principal point `c` cần
+là `(cx, cy) = (W/2, H/2)` — **đảo ngược thứ tự**. Vô hại trên ảnh vuông (W=H) nhưng
+gây sai principal point tới hàng trăm pixel trên ảnh không vuông — và **96%** ảnh
+trong dataset này không vuông.
+
+**Fix:** [pose_estimator.py](src/pose24/models/pose_estimator.py) tách rõ
+`h, w = data_sample.ori_shape` rồi build `c = [w/2, h/2]` đúng thứ tự, không halving
+trực tiếp `ori_shape`.
+
+### 10.11 Demo: GT/Pred lệch ảnh khi browse split "train"
+
+**Triệu chứng:** trên demo, chọn split "train" rồi xem sample — overlay Pred (đỏ)
+lệch hẳn khỏi GT (xanh), có khi rơi vào vùng hoàn toàn khác trong ảnh (nền, vật thể
+khác), trông như model dự đoán sai be bét — dù model đã **train trên chính sample
+đó** và MPJPE log lúc train rất thấp.
+
+**Nguyên nhân:** demo build dataset cho mọi split bằng đúng `{split}_dataloader`
+trong config. Với split "train", đó là `train_dataloader.dataset` — pipeline có
+`RandomFlip`, `RandomHalfBody`, `RandomBBoxTransform(scale=[0.5,1.6],
+rotate=±90°)` — **augmentation ngẫu nhiên, khác mỗi lần gọi**. Trong khi đó, ảnh
+nền + GT vẽ trên demo lấy từ `dataset.get_data_info(idx)` — đọc thẳng annotation,
+**không đi qua pipeline**. Pred thì chạy qua `dataset[idx]` (full pipeline, có
+augment). Hai nguồn lệch nhau ngay từ ảnh input: Pred chạy trên 1 ảnh đã bị
+crop/xoay/scale ngẫu nhiên, còn ảnh hiển thị + GT là ảnh gốc chưa biến đổi — overlay
+2 thứ không tương ứng lên nhau.
+
+**Fix:** [demo/app.py](demo/app.py) `load_dataset()` luôn ép dùng `val_pipeline`
+(chỉ resize/crop cố định theo bbox, deterministic, không augment ngẫu nhiên) khi
+build dataset cho **mọi** split — không chỉ "val"/"test".
 
 | Bug | Ảnh hưởng | Cần train lại? |
 |-----|-----------|:--------------:|
 | 10.8 Flip L/R | trọng số học sai depth L/R | **Có** |
-| 10.9 Focal length | chỉ bước decode → MPJPE/scale | Không |
+| 10.9 Focal length (2 vòng) | chỉ bước decode → MPJPE/scale | Không |
+| 10.10 Đảo cx/cy fallback | chỉ ảnh không có GT (demo upload) | Không |
+| 10.11 Demo train-split pipeline | chỉ hiển thị demo, không ảnh hưởng model/training | Không |
 
 ---
 
