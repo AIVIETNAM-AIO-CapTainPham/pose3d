@@ -12,7 +12,10 @@ wheels/
 data/
 
 work_dirs
+weights
 
 clone_code
 .pytest_cache
 .ruff_cache
+
+.env
