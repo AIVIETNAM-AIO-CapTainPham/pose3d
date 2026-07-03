@@ -25,6 +25,26 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 os.chdir(ROOT)
 
+
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader (KEY=VALUE per line, '#' comments) so HF_TOKEN can
+    be set without installing python-dotenv just for this one file. Only sets
+    variables not already present in the environment — a real env var always
+    wins over .env. huggingface_hub picks up HF_TOKEN automatically once set.
+    """
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv(ROOT / ".env")
+
 import pose24  # noqa: E402, F401  — registers all custom modules
 
 import cv2  # noqa: E402
@@ -48,6 +68,17 @@ WORK_DIRS_ROOT = ROOT / "work_dirs"
 DEFAULT_CONFIG = str(ROOT / "src/pose24/configs/rtmw3d_l_finetune_pose24_v2.py")
 ORIG_CKPT = ROOT / "work_dirs/original_rtmw3d/rtmw3d-l_cocktail14.pth"
 
+# data/ and work_dirs/ are gitignored (dataset + trained checkpoints are too
+# large for git), so a fresh clone has no checkpoint to demo with. Fall back
+# to downloading the fine-tuned checkpoint from Hugging Face Hub into weights/
+# (kept separate from work_dirs/, which is reserved for your own training
+# runs) — config copied alongside it so resolve_config_for() works unchanged.
+HF_REPO_ID = "phcatan9921/pose24-rtmpose3d-l"
+HF_CKPT_FILENAME = "pose24_v4_best_MPJPE_epoch_269.pth"
+WEIGHTS_ROOT = ROOT / "weights"
+FALLBACK_WORK_DIR = WEIGHTS_ROOT / "pose24_v4"
+FALLBACK_CONFIG_SRC = ROOT / "src/pose24/configs/rtmw3d_l_finetune_pose24_v4.py"
+
 GT_COLOR = "#2ecc40"  # green
 PRED_COLOR = "#ff4136"  # red
 ORIG_COLOR = "#0074d9"  # blue (original RTMPose3D)
@@ -64,15 +95,67 @@ BODY17_EDGES = [(i, j) for (i, j) in SKELETON_EDGES if i < 17 and j < 17]
 # ── work_dir discovery ───────────────────────────────────────────────────────
 
 
-def list_work_dirs() -> list[Path]:
-    """Work_dirs that contain at least one checkpoint."""
-    if not WORK_DIRS_ROOT.exists():
+def _download_fallback_checkpoint() -> Path | None:
+    """Fetch the fine-tuned checkpoint from Hugging Face Hub into
+    weights/pose24_v4/, alongside a copy of its training config, so
+    resolve_config_for() can find it the same way it finds a work_dir
+    produced by `make train`. Returns that dir on success, None if the
+    download failed (e.g. offline) — HF_TOKEN (from the environment or a
+    local .env file, see .env.example) is used automatically by
+    huggingface_hub if the repo ever becomes private; the current repo is
+    public so no token is required.
+    """
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        st.error(
+            "huggingface_hub chưa được cài — chạy `uv sync` rồi thử lại, "
+            "hoặc tự train/copy checkpoint vào work_dirs/."
+        )
+        return None
+
+    FALLBACK_WORK_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with st.spinner(
+            f"Không tìm thấy checkpoint local — đang tải từ "
+            f"huggingface.co/{HF_REPO_ID} (~400MB, chỉ tải lần đầu)…"
+        ):
+            downloaded = hf_hub_download(repo_id=HF_REPO_ID, filename=HF_CKPT_FILENAME)
+        dest_ckpt = FALLBACK_WORK_DIR / "best_MPJPE_epoch_269.pth"
+        if not dest_ckpt.exists():
+            dest_ckpt.symlink_to(downloaded)
+        dest_cfg = FALLBACK_WORK_DIR / FALLBACK_CONFIG_SRC.name
+        if not dest_cfg.exists() and FALLBACK_CONFIG_SRC.exists():
+            dest_cfg.write_text(FALLBACK_CONFIG_SRC.read_text(encoding="utf-8"), encoding="utf-8")
+        return FALLBACK_WORK_DIR
+    except Exception as e:  # noqa: BLE001 — surface any HF/network error to the user
+        st.error(f"Tải checkpoint từ Hugging Face Hub thất bại: {e}")
+        return None
+
+
+def _scan_checkpoint_dirs(root: Path) -> list[Path]:
+    if not root.exists():
         return []
-    found = [
+    return [
         d
-        for d in sorted(WORK_DIRS_ROOT.iterdir())
+        for d in sorted(root.iterdir())
         if d.is_dir() and d.name != "original_rtmw3d" and any(d.glob("*.pth"))
     ]
+
+
+def list_work_dirs() -> list[Path]:
+    """Checkpoint dirs to offer in the UI: your own training runs
+    (work_dirs/<run>) plus anything downloaded into weights/ (see
+    _download_fallback_checkpoint). On a fresh clone, data/ and work_dirs/
+    are both gitignored (too large for git) so both are empty — fall back to
+    downloading the fine-tuned checkpoint from Hugging Face Hub into
+    weights/ (see HF_REPO_ID above).
+    """
+    found = _scan_checkpoint_dirs(WORK_DIRS_ROOT) + _scan_checkpoint_dirs(WEIGHTS_ROOT)
+    if not found:
+        downloaded_dir = _download_fallback_checkpoint()
+        if downloaded_dir is not None:
+            found = [downloaded_dir]
     return found
 
 
@@ -440,7 +523,11 @@ def main():
 
         work_dirs = list_work_dirs()
         if not work_dirs:
-            st.error("No work_dirs with checkpoints found under work_dirs/")
+            st.error(
+                "No checkpoint available — tried work_dirs/ locally and "
+                f"huggingface.co/{HF_REPO_ID}, both failed. Check your "
+                "network connection, or train a model with `make train`."
+            )
             st.stop()
         wd_names = [d.name for d in work_dirs]
         wd_sel = st.selectbox(
@@ -454,7 +541,18 @@ def main():
         config = resolve_config_for(work_dir)
         st.caption(f"config: `{Path(config).name}`")
 
-        source = st.radio("Input source", ["Dataset sample", "Upload image"])
+        # data/GT/ (the SAM-3D-Body-labelled training set) is gitignored, same
+        # as work_dirs/ — a fresh clone with no local dataset can only use
+        # "Upload image" (real inference, no ground-truth overlay to compare
+        # against). "Dataset sample" needs data/GT/ present on disk.
+        has_dataset = (ROOT / "data" / "GT" / "labels").exists()
+        source_options = ["Dataset sample", "Upload image"] if has_dataset else ["Upload image"]
+        if not has_dataset:
+            st.caption(
+                "ℹ️ data/GT/ không có sẵn (chỉ có trên máy đã tự chạy pipeline "
+                "gán nhãn SAM-3D-Body) — chỉ dùng được chế độ Upload image."
+            )
+        source = st.radio("Input source", source_options)
 
         ckpts = sorted(work_dir.glob("best_MPJPE_epoch_*.pth")) + sorted(
             work_dir.glob("epoch_*.pth")

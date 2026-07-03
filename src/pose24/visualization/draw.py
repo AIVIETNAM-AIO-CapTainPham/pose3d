@@ -99,7 +99,7 @@ def plot_3d_skeleton(
     ax.set_title("3D keypoints (camera frame)")
     ax.set_xlabel("x (right)")
     ax.set_ylabel("z (forward)")
-    ax.set_zlabel("up")
+    ax.set_zlabel("y (up)")
     ax.legend(loc="upper right", fontsize=8)
 
 
