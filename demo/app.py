@@ -9,7 +9,7 @@ Features
 
 Usage
 -----
-    cd /home/angle/jupyterlab/DEV/POSE3D
+    cd POSE3D
     PYTHONPATH=src uv run streamlit run demo/app.py
 """
 
@@ -249,18 +249,18 @@ def load_model(checkpoint: str, config: str):
 
 
 @st.cache_resource(show_spinner="Loading original RTMPose3D (133-kpt)…")
-def load_original_model(config: str):
+def _load_original_model_cached(config: str, ckpt_mtime: float):
     """Build the stock RTMPose3D-L (cocktail14, 133 wholebody kpts).
 
     Re-uses our ported classes (identical architecture) — only out_channels and
-    the codec default z_range differ from the finetuned config.
+    the codec default z_range differ from the finetuned config. ckpt_mtime is
+    part of the cache key purely so a fresh download (e.g. the file didn't
+    exist yet on a previous, now-stale cache_resource call) busts the cache
+    instead of Streamlit replaying an old result for the same `config` string.
     """
     from mmengine.config import Config
     from mmengine.registry import init_default_scope
     from mmpose.registry import MODELS
-
-    if not ORIG_CKPT.exists():
-        return None, None
 
     init_default_scope("mmpose")
     cfg = Config.fromfile(config)
@@ -289,6 +289,14 @@ def load_original_model(config: str):
     dev = _device()
     model.to(dev).eval()
     return model, dev
+
+
+def load_original_model(config: str):
+    """Wrapper kept outside cache_resource so a missing checkpoint is checked
+    fresh on every call, rather than being baked into the cache key."""
+    if not ORIG_CKPT.exists():
+        return None, None
+    return _load_original_model_cached(config, ORIG_CKPT.stat().st_mtime)
 
 
 # ── inference ──────────────────────────────────────────────────────────────
@@ -594,7 +602,7 @@ def main():
         checkpoint = str(work_dir / ckpt_sel)
 
         show_orig = st.toggle(
-            "Compare with original RTMPose3D", value=ORIG_CKPT.exists()
+            "Compare with original RTMPose3D", value=True
         )
         if show_orig and not ORIG_CKPT.exists():
             if not _download_original_checkpoint():

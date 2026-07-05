@@ -1,4 +1,4 @@
-# POSE3D: Streamlit UI cho RTMPose3D
+# POSE3D: Fine-tune RTMPose3D với pseudo-labeling SAM-3D-Body
 
 Dự án fine-tune mô hình 3D pose estimation trên schema POSE-24 (17 khớp
 COCO body + 7 điểm giải phẫu). Kiến trúc gốc là RTMW3D của
