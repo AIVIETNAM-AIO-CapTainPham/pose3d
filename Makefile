@@ -6,7 +6,7 @@ CONFIG    ?= src/pose24/configs/rtmw3d_l_finetune_pose24_v3.py
 WORK_DIR  ?= work_dirs/pose24_v3
 
 .PHONY: help splits test test-flip test-unit test-loss test-viz test-pipeline test-model \
-        eval train train-resume train-multi-gpu plot-metrics compare-baseline \
+        eval train train-resume train-multi-gpu \
         plot-focal-ablation visualize demo demo-tunnel lint pre-commit clean
 
 help:  ## Show this help
@@ -59,15 +59,6 @@ train-multi-gpu:  ## Finetune on all available GPUs
 	  --work-dir $(WORK_DIR) \
 	  --launcher pytorch \
 	  --cfg-options data_root=$(DATA_ROOT)
-
-plot-metrics:  ## Plot val MPJPE/P-MPJPE per epoch from WORK_DIR's logs → PNG
-	PYTHONPATH=src $(UV) python tools/plot_metrics.py $(WORK_DIR)
-
-compare-baseline:  ## Per-joint MPJPE: pretrained RTMPose3D-L gốc vs CKPT_BEST finetune
-	PYTHONPATH=src $(UV) python tools/compare_baseline.py \
-	  --finetune-ckpt $(CKPT_BEST) \
-	  --finetune-config $(CONFIG) \
-	  --out $(WORK_DIR)/compare_baseline
 
 FOCAL_BEFORE ?= work_dirs/pose24/20260614_022439
 FOCAL_AFTER  ?= work_dirs/pose24/20260614_150720

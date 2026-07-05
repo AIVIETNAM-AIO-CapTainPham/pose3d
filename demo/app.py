@@ -18,6 +18,7 @@ from __future__ import annotations
 import copy
 import os
 import sys
+import urllib.request
 from pathlib import Path
 
 # ── path setup (must happen before any pose24 import) ─────────────────────
@@ -79,6 +80,15 @@ WEIGHTS_ROOT = ROOT / "weights"
 FALLBACK_WORK_DIR = WEIGHTS_ROOT / "pose24_v4"
 FALLBACK_CONFIG_SRC = ROOT / "src/pose24/configs/rtmw3d_l_finetune_pose24_v4.py"
 
+# Stock RTMPose3D-L (cocktail14, 133-kpt) used for the "Compare with original
+# RTMPose3D" toggle — official OpenMMLab release, public HTTP download, no
+# token needed (same file the upstream rtmpose3d demo caches under
+# ~/.cache/rtmpose3d/checkpoints/).
+ORIG_CKPT_URL = (
+    "https://download.openmmlab.com/mmpose/v1/wholebody_3d_keypoint/"
+    "rtmw3d/rtmw3d-l_8xb64_cocktail14-384x288-794dbc78_20240626.pth"
+)
+
 GT_COLOR = "#2ecc40"  # green
 PRED_COLOR = "#ff4136"  # red
 ORIG_COLOR = "#0074d9"  # blue (original RTMPose3D)
@@ -131,6 +141,27 @@ def _download_fallback_checkpoint() -> Path | None:
     except Exception as e:  # noqa: BLE001 — surface any HF/network error to the user
         st.error(f"Tải checkpoint từ Hugging Face Hub thất bại: {e}")
         return None
+
+
+def _download_original_checkpoint() -> bool:
+    """Fetch the stock RTMPose3D-L (cocktail14) checkpoint from OpenMMLab's
+    public model zoo into ORIG_CKPT, so the "Compare with original
+    RTMPose3D" toggle works without any manual download step. Returns True
+    on success, False if the download failed (e.g. offline)."""
+    ORIG_CKPT.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = ORIG_CKPT.with_suffix(".pth.part")
+    try:
+        with st.spinner(
+            f"Đang tải checkpoint RTMPose3D-L gốc từ {ORIG_CKPT_URL} "
+            "(~230MB, chỉ tải lần đầu)…"
+        ):
+            urllib.request.urlretrieve(ORIG_CKPT_URL, tmp_path)
+        tmp_path.rename(ORIG_CKPT)
+        return True
+    except Exception as e:  # noqa: BLE001 — surface any network error to the user
+        st.error(f"Tải checkpoint gốc từ OpenMMLab thất bại: {e}")
+        tmp_path.unlink(missing_ok=True)
+        return False
 
 
 def _scan_checkpoint_dirs(root: Path) -> list[Path]:
@@ -548,10 +579,7 @@ def main():
         has_dataset = (ROOT / "data" / "GT" / "labels").exists()
         source_options = ["Dataset sample", "Upload image"] if has_dataset else ["Upload image"]
         if not has_dataset:
-            st.caption(
-                "ℹ️ data/GT/ không có sẵn (chỉ có trên máy đã tự chạy pipeline "
-                "gán nhãn SAM-3D-Body) — chỉ dùng được chế độ Upload image."
-            )
+            st.caption("ℹ️ data/GT/ not found, Upload image only.")
         source = st.radio("Input source", source_options)
 
         ckpts = sorted(work_dir.glob("best_MPJPE_epoch_*.pth")) + sorted(
@@ -569,8 +597,8 @@ def main():
             "Compare with original RTMPose3D", value=ORIG_CKPT.exists()
         )
         if show_orig and not ORIG_CKPT.exists():
-            st.warning("Original checkpoint not found — download first.")
-            show_orig = False
+            if not _download_original_checkpoint():
+                show_orig = False
 
     model, device = load_model(checkpoint, config)
     orig_model = orig_dev = None
